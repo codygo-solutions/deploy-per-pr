@@ -4,21 +4,61 @@ concurrency:
   group: dev
   cancel-in-progress: true
 
+# defaults:
+#   run:
+#     shell: bash
+
+env:
+  NODE_OPTIONS: "--max_old_space_size=4096"
+  AWS_DEFAULT_REGION: eu-central-1 # needed from command line
+
 on:
   push:
-  # branches:
-  #   - main
-  # pull_request:
-  #   types:
-  #     - ready_for_review
-
-  #   paths:
-  #     - "NO_SUCH_PATH_apps/**"
-env:
-  BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
-  AWS_REGION: eu-central-1
 
 jobs:
-  setup:
+  build-and-deploy:
     runs-on: ubuntu-latest
     environment: codygo
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Use pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 7
+
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline --ignore-scripts
+
+      - name: Build app
+        run: pnpm --filter sample run build
+
+      - name: Setup names
+        run: |
+          r=${{ github.repository }}
+          safeRepoName=${r//[^A-Za-z0-9-.]/"-"}
+          b=${{ github.ref_name || github.head_name }}
+          safeBranchName=${b//[^A-Za-z0-9-.]/"-"}
+
+          echo "BUCKET_NAME=$safeRepoName" >> $GITHUB_ENV
+          echo "PR_FOLDER_NAME=$safeBranchName" >> $GITHUB_ENV
+
+      - name: Create repo bucket if needed
+        run: |
+          aws s3 mb s3://${BUCKET_NAME} --no-paginate || true
+          aws s3 sync ./sample/dist s3://${BUCKET_NAME}/${PR_FOLDER_NAME} --acl public-read
+          # aws s3 website s3://${BUCKET_NAME} --index-document index.html --error-document error.html  || true
