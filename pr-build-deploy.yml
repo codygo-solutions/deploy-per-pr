@@ -1,0 +1,75 @@
+name: Fay Frontend Build
+
+concurrency:
+  group: dev
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+    working-directory: sample
+
+on:
+  push:
+  # branches:
+  #   - main
+  # pull_request:
+  #   types:
+  #     - ready_for_review
+
+  #   paths:
+  #     - "NO_SUCH_PATH_apps/**"
+
+# on:
+#   push:
+#     paths:
+#       - "apps/**"
+#       - "libs/**"
+#       - ".github/workflows/**"
+#     branches:
+#       - main
+#   pull_request:
+#     paths:
+#       - "apps/**"
+#       - "libs/**"
+#       - ".github/workflows/**"
+
+env:
+  BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+  NODE_OPTIONS: "--max_old_space_size=4096"
+  AWS_DEFAULT_REGION: us-east-1
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment: codygo
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Use pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 7
+
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline --ignore-scripts
+
+      - name: Build app
+        run: pnpm run build
